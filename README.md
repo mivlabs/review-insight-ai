@@ -3,6 +3,8 @@
 Automated sentiment analysis and topic extraction from 500K+ customer reviews using LLM.
 
 ![Dashboard Screenshot](docs/dashboard.png)
+![Dashboard Screenshot](docs/topics.png)
+![Dashboard Screenshot](docs/sample.png)
 
 ## 🎯 Business Value
 
@@ -63,10 +65,17 @@ Open http://localhost:8501 in your browser.
 
 ## 📊 Dataset
 
-This project uses the [Amazon Fine Food Reviews](https://www.kaggle.com/datasets/snap/amazon-fine-food-reviews) dataset from Kaggle:
+This project uses the [Amazon Fine Food Reviews](https://www.kaggle.com/datasets/arhamrumi/amazon-product-reviews) dataset from Kaggle:
 - 568,454 reviews
 - October 1999 - October 2012
 - Real customer feedback with ratings
+
+**To run this project:**
+1. Download the dataset from Kaggle (link above)
+2. Place `reviews.csv` in the `data/` folder
+3. Run `python ingest.py`
+
+Note: The dataset is not included in this repository due to its size (286 MB).
 
 ## 🛠 Tech Stack
 
