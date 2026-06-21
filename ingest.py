@@ -4,8 +4,10 @@ import json
 import time
 import sqlite3
 import logging
+import argparse
 from openai import OpenAI
 from dotenv import load_dotenv
+from tqdm import tqdm
 
 # Настройка логирования
 logging.basicConfig(
@@ -43,7 +45,7 @@ Return ONLY valid JSON without any additional text, markdown formatting, or expl
         )
         content = response.choices[0].message.content.strip()
         
-        # Убираем markdown-обёртки если есть
+        # Убираем markdown-обёртки
         if content.startswith("```"):
             content = content.split("\n", 1)[1] if "\n" in content else content[3:]
         if content.endswith("```"):
@@ -73,8 +75,20 @@ Return ONLY valid JSON without any additional text, markdown formatting, or expl
             "summary": "Error analyzing review"
         }
 
+def get_processed_texts(cursor) -> set:
+    """Получает уже обработанные тексты для resume."""
+    cursor.execute("SELECT original_text FROM reviews_analysis")
+    return {row[0] for row in cursor.fetchall()}
+
 def main():
-    """Основная функция."""
+    """Основная функция с batch processing."""
+    parser = argparse.ArgumentParser(description='Batch review analysis')
+    parser.add_argument('--limit', type=int, default=500, 
+                        help='Number of reviews to process (default: 500)')
+    parser.add_argument('--resume', action='store_true',
+                        help='Resume from where left off')
+    args = parser.parse_args()
+    
     csv_path = './data/reviews.csv'
     db_path = './data/reviews.db'
     
@@ -96,21 +110,11 @@ def main():
         if not text_col:
             raise ValueError(f"Text column not found. Available: {columns}")
         
-        # Определяем колонку с датой
-        date_col = None
-        for col in ['date', 'Date', 'review_date', 'created_at', 'Time', 'time', 'timestamp']:
-            if col in columns:
-                date_col = col
-                break
-        
-        # Читаем первые 50 строк
-        rows = []
-        for i, row in enumerate(reader):
-            if i >= 50:
-                break
-            rows.append(row)
+        # Читаем все строки
+        rows = list(reader)
     
-    logger.info(f"Loaded {len(rows)} reviews")
+    logger.info(f"Total reviews in CSV: {len(rows)}")
+    logger.info(f"Will process: {min(args.limit, len(rows))} reviews")
     
     # Подключение к SQLite
     conn = sqlite3.connect(db_path)
@@ -120,7 +124,7 @@ def main():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS reviews_analysis (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            original_text TEXT,
+            original_text TEXT UNIQUE,
             sentiment TEXT,
             topics TEXT,
             intent TEXT,
@@ -130,27 +134,58 @@ def main():
     ''')
     conn.commit()
     
-    # Анализ каждого отзыва
-    for i, row in enumerate(rows):
+    # Resume: получаем уже обработанные тексты
+    processed = get_processed_texts(cursor) if args.resume else set()
+    logger.info(f"Already processed: {len(processed)} reviews")
+    
+    # Фильтруем и ограничиваем
+    to_process = []
+    for row in rows:
         text = row.get(text_col, '')
         if not text or len(text.strip()) < 10:
             continue
-        
-        logger.info(f"Analyzing review {i+1}/{len(rows)}...")
-        result = analyze_review(text)
-        
-        # Вставка в БД
-        cursor.execute(
-            'INSERT INTO reviews_analysis (original_text, sentiment, topics, intent, summary) VALUES (?, ?, ?, ?, ?)',
-            (text, result['sentiment'], json.dumps(result['topics']), result['intent'], result['summary'])
-        )
-        
-        time.sleep(1)
+        if args.resume and text in processed:
+            continue
+        to_process.append(text)
+        if len(to_process) >= args.limit:
+            break
     
-    conn.commit()
+    logger.info(f"Reviews to process: {len(to_process)}")
+    
+    if not to_process:
+        logger.info("Nothing to process. Exiting.")
+        conn.close()
+        return
+    
+    # Анализ с progress bar
+    success_count = 0
+    error_count = 0
+    
+    with tqdm(total=len(to_process), desc="Analyzing reviews") as pbar:
+        for text in to_process:
+            result = analyze_review(text)
+            
+            try:
+                cursor.execute(
+                    'INSERT OR IGNORE INTO reviews_analysis (original_text, sentiment, topics, intent, summary) VALUES (?, ?, ?, ?, ?)',
+                    (text, result['sentiment'], json.dumps(result['topics']), result['intent'], result['summary'])
+                )
+                if cursor.rowcount > 0:
+                    success_count += 1
+                else:
+                    error_count += 1
+            except Exception as e:
+                logger.error(f"DB error: {e}")
+                error_count += 1
+            
+            conn.commit()
+            pbar.update(1)
+            time.sleep(0.5)  # Rate limiting
+    
     conn.close()
     
-    logger.info(f"Done. Analyzed: {len(rows)} reviews. Saved to {db_path}")
+    logger.info(f"✅ Done! Success: {success_count}, Errors: {error_count}")
+    logger.info(f"Total in DB: {success_count + len(processed)} reviews")
 
 if __name__ == "__main__":
     main()

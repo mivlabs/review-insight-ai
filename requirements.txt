@@ -3,3 +3,5 @@ pandas
 streamlit
 plotly
 python-dotenv
+tqdm
+fpdf2

@@ -4,6 +4,8 @@ import sqlite3
 import plotly.express as px
 import json
 from datetime import datetime
+from fpdf import FPDF
+import io
 
 # Заголовок
 st.set_page_config(page_title="ReviewInsight AI", layout="wide")
@@ -24,15 +26,12 @@ def load_data():
         try:
             parsed = json.loads(x)
             if isinstance(parsed, list):
-                # Фильтруем не-строковые значения
                 return [t for t in parsed if isinstance(t, str) and len(t) > 1]
             return []
         except:
             return []
     
     df['topics_list'] = df['topics'].apply(parse_topics)
-    
-    # Конвертируем дату
     df['analyzed_at'] = pd.to_datetime(df['analyzed_at'])
     df['date'] = df['analyzed_at'].dt.date
     
@@ -45,7 +44,6 @@ except Exception as e:
     st.error(f"Error loading data: {e}")
     st.stop()
 
-# Проверка на пустую БД
 if df.empty:
     st.warning("No data available. Run ingest.py first.")
     st.stop()
@@ -62,13 +60,86 @@ if sentiment_filter != "All":
 else:
     df_filtered = df
 
-# Метрика вверху
-col1, col2, col3 = st.columns(3)
-col1.metric("Total Reviews Analyzed", len(df_filtered))
+# Экспорт в sidebar
+st.sidebar.header("Export Data")
+export_format = st.sidebar.selectbox("Choose format:", ["CSV", "PDF", "None"])
+
+if export_format == "CSV":
+    csv = df_filtered.to_csv(index=False)
+    st.sidebar.download_button(
+        label="Download CSV",
+        data=csv,
+        file_name=f"reviews_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv"
+    )
+elif export_format == "PDF":
+    # Генерация PDF (без Unicode символов)
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    
+    pdf.cell(200, 10, txt="ReviewInsight AI - Export Report", ln=True, align="C")
+    pdf.ln(10)
+    pdf.cell(200, 10, txt=f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True)
+    pdf.ln(5)
+    pdf.cell(200, 10, txt=f"Total Reviews: {len(df_filtered)}", ln=True)
+    pdf.ln(10)
+    
+    # Summary statistics
+    pdf.set_font("Arial", 'B', size=11)
+    pdf.cell(200, 10, txt="Summary Statistics:", ln=True)
+    pdf.set_font("Arial", size=10)
+    
+    sentiment_counts = df_filtered['sentiment'].value_counts()
+    for sent, count in sentiment_counts.items():
+        pdf.cell(200, 8, txt=f"  {sent.capitalize()}: {count} ({count/len(df_filtered)*100:.1f}%)", ln=True)
+    
+    pdf.ln(10)
+    
+    # Top topics
+    all_topics = [topic for topics_list in df_filtered['topics_list'] for topic in topics_list]
+    if all_topics:
+        topics_df = pd.DataFrame(all_topics, columns=['Topic'])
+        top_topics = topics_df['Topic'].value_counts().head(5)
+        
+        pdf.set_font("Arial", 'B', size=11)
+        pdf.cell(200, 10, txt="Top 5 Topics:", ln=True)
+        pdf.set_font("Arial", size=10)
+        
+        for topic, count in top_topics.items():
+            pdf.cell(200, 8, txt=f"  {topic}: {count}", ln=True)
+    
+    pdf.ln(10)
+    
+    # Sample reviews (только ASCII)
+    pdf.set_font("Arial", 'B', size=11)
+    pdf.cell(200, 10, txt="Sample Reviews (first 10):", ln=True)
+    pdf.set_font("Arial", size=9)
+    
+    for idx, row in df_filtered.head(10).iterrows():
+        # Убираем не-ASCII символы из summary
+        summary_ascii = row['summary'].encode('ascii', 'ignore').decode('ascii')
+        pdf.multi_cell(0, 6, txt=f"[{row['sentiment'].upper()}] {summary_ascii}")
+        pdf.ln(3)
+    
+    # Сохраняем PDF в bytes
+    pdf_bytes = bytes(pdf.output(dest='S'))
+    
+    st.sidebar.download_button(
+        label="Download PDF",
+        data=pdf_bytes,
+        file_name=f"reviews_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+        mime="application/pdf"
+    )
+
+# Метрики вверху
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Total Reviews", len(df_filtered))
 col2.metric("Positive", len(df_filtered[df_filtered['sentiment'] == 'positive']))
 col3.metric("Negative", len(df_filtered[df_filtered['sentiment'] == 'negative']))
+col4.metric("Avg Review Length", f"{df_filtered['original_text'].str.len().mean():.0f} chars")
 
-# Круговая диаграмма: Sentiment Distribution (голубая гамма)
+# Круговая диаграмма: Sentiment Distribution
 st.subheader("Sentiment Distribution")
 sentiment_counts = df_filtered['sentiment'].value_counts().reset_index()
 sentiment_counts.columns = ['Sentiment', 'Count']
@@ -81,7 +152,7 @@ fig_pie = px.pie(sentiment_counts, values='Count', names='Sentiment',
                  })
 st.plotly_chart(fig_pie, use_container_width=True)
 
-# Бар-чарт: Top 5 Customer Topics (голубая гамма)
+# Бар-чарт: Top 5 Customer Topics
 st.subheader("Top 5 Customer Topics")
 all_topics = [topic for topics_list in df_filtered['topics_list'] for topic in topics_list]
 if all_topics:
@@ -96,7 +167,7 @@ if all_topics:
 else:
     st.info("No topics available")
 
-# Линейный график: Sentiment Trend Over Time (голубая гамма)
+# Линейный график: Sentiment Trend Over Time
 st.subheader("Sentiment Trend Over Time")
 trend_df = df_filtered.groupby(['date', 'sentiment']).size().reset_index(name='Count')
 fig_line = px.line(trend_df, x='date', y='Count', color='sentiment',
@@ -107,6 +178,16 @@ fig_line = px.line(trend_df, x='date', y='Count', color='sentiment',
                        'neutral': '#B0E0E6'
                    })
 st.plotly_chart(fig_line, use_container_width=True)
+
+# Новая метрика: Intent Distribution
+st.subheader("Customer Intent Distribution")
+intent_counts = df_filtered['intent'].value_counts().reset_index()
+intent_counts.columns = ['Intent', 'Count']
+fig_intent = px.bar(intent_counts, x='Intent', y='Count',
+                    labels={'Intent': 'Intent', 'Count': 'Count'},
+                    color='Count',
+                    color_continuous_scale='Blues')
+st.plotly_chart(fig_intent, use_container_width=True)
 
 # Таблица с примерами
 st.subheader("Sample Reviews")
