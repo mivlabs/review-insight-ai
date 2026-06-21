@@ -1,5 +1,7 @@
 # ReviewInsight AI — Amazon Product Reviews Analytics
 
+[![CI](https://github.com/mivlabs/review-insight-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/mivlabs/review-insight-ai/actions/workflows/ci.yml)
+
 Automated sentiment analysis and topic extraction from 500K+ customer reviews using LLM.
 
 ![Dashboard Screenshot](docs/dashboard.png)
