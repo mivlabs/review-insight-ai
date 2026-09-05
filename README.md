@@ -138,6 +138,7 @@ Note: The dataset is not included in this repository due to its size (286 MB).
 - **Plotly** — interactive visualizations
 - **pandas** — data processing
 - **Docker** — containerization
+- **pytest** — unit tests for `analysis_utils.py`
 
 ## 📈 Future Improvements
 
@@ -145,7 +146,8 @@ Note: The dataset is not included in this repository due to its size (286 MB).
 - [ ] Add batch processing for all 568K reviews
 - [ ] Implement real-time monitoring
 - [ ] Add export to CSV/PDF
-- [ ] Add CI/CD pipeline (GitHub Actions)
+- [x] CI/CD pipeline (GitHub Actions) — see badge above
+- [x] Unit tests for the reusable logic (`analysis_utils.py`) — see Testing below
 
 ## 🔧 Development Workflow
 
@@ -154,8 +156,10 @@ Note: The dataset is not included in this repository due to its size (286 MB).
 1. **Edit code** in your local repository
 2. **Test locally:**
    ```bash
-   python ingest.py  # Re-run ingestion if needed
-   streamlit run dashboard.py  # Check dashboard
+   pip install -r requirements-dev.txt
+   pytest -v                          # unit tests, no network/API key needed
+   python ingest.py                   # re-run ingestion if needed
+   streamlit run dashboard.py         # check dashboard
    ```
 
 3. **Commit changes:**
