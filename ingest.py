@@ -9,6 +9,8 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from tqdm import tqdm
 
+from analysis_utils import detect_text_column, normalize_topics, strip_markdown_code_fence
+
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
@@ -43,28 +45,9 @@ Return ONLY valid JSON without any additional text, markdown formatting, or expl
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1
         )
-        content = response.choices[0].message.content.strip()
-        
-        # Убираем markdown-обёртки
-        if content.startswith("```"):
-            content = content.split("\n", 1)[1] if "\n" in content else content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-        content = content.strip()
-        
+        content = strip_markdown_code_fence(response.choices[0].message.content.strip())
         result = json.loads(content)
-        
-        # Валидация topics
-        topics = result.get("topics", [])
-        if isinstance(topics, str):
-            topics = [topics]
-        if not isinstance(topics, list):
-            topics = []
-        topics = [t for t in topics if isinstance(t, str) and len(t) > 1]
-        if not topics:
-            topics = ["unknown"]
-        result["topics"] = topics
-        
+        result["topics"] = normalize_topics(result.get("topics", []))
         return result
     except Exception as e:
         logger.warning(f"Failed to parse LLM response: {e}")
@@ -101,12 +84,8 @@ def main():
         logger.info(f"CSV columns: {columns}")
         
         # Определяем колонку с текстом
-        text_col = None
-        for col in ['text', 'Text', 'review_text', 'review', 'content', 'Review']:
-            if col in columns:
-                text_col = col
-                break
-        
+        text_col = detect_text_column(columns)
+
         if not text_col:
             raise ValueError(f"Text column not found. Available: {columns}")
         

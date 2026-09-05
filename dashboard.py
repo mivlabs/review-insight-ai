@@ -2,10 +2,11 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import plotly.express as px
-import json
 from datetime import datetime
 from fpdf import FPDF
 import io
+
+from analysis_utils import parse_topics_column
 
 # Заголовок
 st.set_page_config(page_title="ReviewInsight AI", layout="wide")
@@ -18,20 +19,8 @@ def load_data():
     conn = sqlite3.connect('./data/reviews.db')
     df = pd.read_sql_query("SELECT * FROM reviews_analysis ORDER BY analyzed_at DESC", conn)
     conn.close()
-    
-    # Парсим topics из JSON с обработкой ошибок
-    def parse_topics(x):
-        if not x or x == 'error' or x == '[]':
-            return []
-        try:
-            parsed = json.loads(x)
-            if isinstance(parsed, list):
-                return [t for t in parsed if isinstance(t, str) and len(t) > 1]
-            return []
-        except:
-            return []
-    
-    df['topics_list'] = df['topics'].apply(parse_topics)
+
+    df['topics_list'] = df['topics'].apply(parse_topics_column)
     df['analyzed_at'] = pd.to_datetime(df['analyzed_at'])
     df['date'] = df['analyzed_at'].dt.date
     
