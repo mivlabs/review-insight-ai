@@ -30,17 +30,18 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
-    
+        pip install -r requirements.txt -r requirements-dev.txt
+
     - name: Check Python syntax
       run: |
         python -m py_compile ingest.py
         python -m py_compile dashboard.py
-    
+        python -m py_compile analysis_utils.py
+
     - name: Verify imports
       run: |
         python -c "import openai; import pandas; import streamlit; import plotly; print('All imports successful')"
-    
+
     - name: Check requirements.txt format
       run: |
         python -c "
@@ -49,3 +50,10 @@ jobs:
             print(f'Found {len(lines)} dependencies')
             assert len(lines) > 0, 'requirements.txt is empty'
         "
+
+    - name: Run pytest
+      run: pytest -v
+
+    - name: Lint (ruff, informational)
+      run: ruff check .
+      continue-on-error: true
