@@ -6,3 +6,5 @@ chroma_db/
 .DS_Store
 data/*.csv
 data/*.db
+apply-patches.sh
+patch/
