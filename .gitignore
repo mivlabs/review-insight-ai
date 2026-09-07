@@ -8,3 +8,4 @@ data/*.csv
 data/*.db
 apply-patches.sh
 patch/
+patches/
